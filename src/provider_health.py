@@ -98,6 +98,7 @@ class CircuitBreakingProvider:
     def fetch_candles(self, request: CandleRequest) -> Sequence[Candle]:
         """Fetch unless open; count failures and allow a single recovery probe."""
         state = self.state
+        was_half_open = state == "half-open"
         if state == "open":
             raise ProviderUnavailable(
                 f"Provider {self.name!r} circuit is open; retry later."
@@ -115,7 +116,11 @@ class CircuitBreakingProvider:
             self._total_failures += 1
             self._consecutive_failures += 1
             self._last_error_type = type(error).__name__
-            self._opened_at = self._clock()
+            if (
+                self._consecutive_failures >= self.failure_threshold
+                or was_half_open
+            ):
+                self._opened_at = self._clock()
             self._probe_in_progress = False
             raise ProviderUnavailable(
                 f"Provider {self.name!r} request failed."
