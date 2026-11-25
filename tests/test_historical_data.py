@@ -442,3 +442,46 @@ def test_backfill_rejects_mismatched_range_without_provider_call(tmp_path):
             now=NOW, max_candles=100,
         )
     assert provider.calls == []
+
+
+@pytest.mark.parametrize("invalid_limit", [True, 0, -1, 1.5])
+def test_backfill_checkpoint_rejects_invalid_candle_limit(tmp_path, invalid_limit):
+    storage = CandleStorage(tmp_path / "invalid-limit.db")
+    with pytest.raises(ValueError, match="integer"):
+        storage.save_backfill_checkpoint(
+            "EUR/USD", "15m", BASE, BASE + timedelta(hours=1),
+            BASE + timedelta(minutes=15), invalid_limit,
+        )
+
+
+def test_backfill_checkpoint_updates_next_cursor(tmp_path):
+    storage = CandleStorage(tmp_path / "cursor-update.db")
+    end = BASE + timedelta(hours=1)
+    storage.save_backfill_checkpoint(
+        "EUR/USD", "15m", BASE, end, BASE + timedelta(minutes=15), 100
+    )
+    storage.save_backfill_checkpoint(
+        "EUR/USD", "15m", BASE, end, BASE + timedelta(minutes=30), 100
+    )
+    assert storage.load_backfill_checkpoint("EUR/USD", "15m")[2] == (
+        BASE + timedelta(minutes=30)
+    )
+
+
+def test_backfill_checkpoint_delete_is_safe_when_missing(tmp_path):
+    storage = CandleStorage(tmp_path / "delete-missing.db")
+    storage.delete_backfill_checkpoint("EUR/USD", "15m")
+    assert storage.load_backfill_checkpoint("EUR/USD", "15m") is None
+
+
+def test_backfill_checkpoints_are_independent_for_multiple_pairs(tmp_path):
+    storage = CandleStorage(tmp_path / "multi-pair.db")
+    end = BASE + timedelta(hours=1)
+    storage.save_backfill_checkpoint(
+        "EUR/USD", "15m", BASE, end, BASE + timedelta(minutes=15), 100
+    )
+    storage.save_backfill_checkpoint(
+        "GBP/USD", "15m", BASE, end, BASE + timedelta(minutes=30), 200
+    )
+    assert storage.load_backfill_checkpoint("EUR/USD", "15m")[3] == 100
+    assert storage.load_backfill_checkpoint("GBP/USD", "15m")[3] == 200
