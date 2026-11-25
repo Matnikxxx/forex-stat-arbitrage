@@ -197,3 +197,16 @@ def test_successful_request_clears_previous_error_type():
     stub.result = [SAMPLE]
     wrapped.fetch_candles(REQUEST)
     assert wrapped.health().last_error_type is None
+
+
+def test_circuit_stays_closed_below_failure_threshold():
+    clock = FakeClock()
+    wrapped = CircuitBreakingProvider(
+        StubProvider(error=OSError("offline")),
+        failure_threshold=2,
+        clock=clock,
+    )
+    with pytest.raises(ProviderUnavailable):
+        wrapped.fetch_candles(REQUEST)
+    assert wrapped.state == "closed"
+    assert wrapped.health().consecutive_failures == 1
