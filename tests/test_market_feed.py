@@ -58,6 +58,8 @@ def test_valid_request_is_returned_unchanged():
     CandleRequest("EUR/USD", "15m", 0),
     CandleRequest("EUR/USD", "15m", 5001),
     CandleRequest("EUR/USD", "15m", True),
+    CandleRequest("EUR/USD", "15m", 10, datetime(2026, 1, 2)),
+    CandleRequest("EUR/USD", "15m", 10, BASE_TIME, BASE_TIME),
 ])
 def test_invalid_requests_are_rejected(invalid_request):
     with pytest.raises(ValueError):
@@ -155,3 +157,31 @@ def test_close_price_conversion_uses_validated_close_values():
 def test_close_price_conversion_rejects_empty_series():
     with pytest.raises(CandleValidationError, match="No market candles"):
         candles_to_close_prices([])
+
+
+def test_request_range_requires_timezone_aware_datetimes():
+    with pytest.raises(ValueError, match="timezone"):
+        validate_request(CandleRequest("EUR/USD", "15m", start=datetime(2026, 1, 1)))
+
+
+def test_provider_candles_must_stay_inside_requested_range():
+    request = CandleRequest(
+        "EUR/USD", "15m", 5,
+        BASE_TIME + timedelta(minutes=15),
+        BASE_TIME + timedelta(minutes=30),
+    )
+    with pytest.raises(MarketDataError, match="before the requested range"):
+        validate_provider_candles(request, [candle(0)])
+    with pytest.raises(MarketDataError, match="after the requested range"):
+        validate_provider_candles(request, [candle(3)])
+
+
+def test_provider_candles_accept_requested_range_boundaries():
+    request = CandleRequest(
+        "EUR/USD", "15m", 5,
+        BASE_TIME + timedelta(minutes=15),
+        BASE_TIME + timedelta(minutes=30),
+    )
+    assert validate_provider_candles(request, [candle(1), candle(2)]) == [
+        candle(1), candle(2)
+    ]

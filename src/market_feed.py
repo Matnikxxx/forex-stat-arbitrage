@@ -37,6 +37,8 @@ class CandleRequest:
     pair: str
     timeframe: str
     limit: int = 500
+    start: datetime | None = None
+    end: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,16 @@ def validate_request(request: CandleRequest) -> CandleRequest:
         raise ValueError("Candle limit must be an integer.")
     if not 1 <= request.limit <= 5000:
         raise ValueError("Candle limit must be between 1 and 5000.")
+    for label, value in (("Start", request.start), ("End", request.end)):
+        if value is not None and (
+            not isinstance(value, datetime)
+            or value.tzinfo is None
+            or value.utcoffset() is None
+        ):
+            raise ValueError(f"{label} time must include a timezone.")
+    if request.start is not None and request.end is not None:
+        if request.start >= request.end:
+            raise ValueError("Start time must be before end time.")
     return request
 
 
@@ -112,6 +124,16 @@ def validate_provider_candles(
         raise MarketDataError(f"Provider returned invalid candles: {error}") from error
     if any(candle.pair != request.pair for candle in validated):
         raise MarketDataError("Provider returned candles for the wrong pair.")
+    if request.start is not None and any(
+        candle.timestamp < request.start.astimezone(timezone.utc)
+        for candle in validated
+    ):
+        raise MarketDataError("Provider returned candles before the requested range.")
+    if request.end is not None and any(
+        candle.timestamp > request.end.astimezone(timezone.utc)
+        for candle in validated
+    ):
+        raise MarketDataError("Provider returned candles after the requested range.")
     return validated
 
 

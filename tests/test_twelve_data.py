@@ -268,3 +268,23 @@ def test_provider_can_be_used_by_historical_service_contract(monkeypatch):
 def test_invalid_provider_settings_are_rejected(settings):
     with pytest.raises(ValueError):
         TwelveDataProvider("test-secret", **settings)
+
+
+def test_date_range_is_included_in_twelve_data_request(monkeypatch):
+    from datetime import timedelta
+
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    end = start + timedelta(hours=1)
+    instance, calls = provider(monkeypatch, [payload(value())])
+    instance.fetch_candles(CandleRequest("EUR/USD", "15m", 10, start, end))
+    query = parse_qs(urlparse(calls[0][0].full_url).query)
+    assert query["start_date"] == ["2026-01-01 00:00:00"]
+    assert query["end_date"] == ["2026-01-01 01:00:00"]
+
+
+def test_unbounded_request_omits_date_range_parameters(monkeypatch):
+    instance, calls = provider(monkeypatch, [payload(value())])
+    instance.fetch_candles(CandleRequest("EUR/USD", "15m"))
+    query = parse_qs(urlparse(calls[0][0].full_url).query)
+    assert "start_date" not in query
+    assert "end_date" not in query

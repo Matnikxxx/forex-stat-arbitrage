@@ -55,3 +55,22 @@ change, so the project does not assume a fixed quota.
 
 This provider is for historical market data and paper-trading research only.
 It has no broker integration and cannot place live orders.
+
+
+## Date-range requests
+
+Requests may optionally include timezone-aware `start` and `end` datetimes:
+
+```python
+from datetime import datetime, timezone
+from src.market_feed import CandleRequest
+
+request = CandleRequest(
+    "EUR/USD", "15m", limit=5000,
+    start=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    end=datetime(2025, 2, 1, tzinfo=timezone.utc),
+)
+result = service.sync(request)
+```
+
+The adapter passes these boundaries to Twelve Data as UTC `start_date` and `end_date` parameters. The existing maximum request size of 5,000 candles still applies; larger historical ranges must be split into bounded requests. Provider output outside the requested range is rejected rather than silently stored. Date-range support does not bypass account history, symbol, or credit limits.

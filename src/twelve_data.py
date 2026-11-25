@@ -69,15 +69,22 @@ class TwelveDataProvider:
 
     def _build_request(self, request: CandleRequest) -> Request:
         validate_request(request)
-        params = urlencode(
-            {
-                "symbol": request.pair,
-                "interval": INTERVALS[request.timeframe],
-                "outputsize": request.limit,
-                "timezone": "UTC",
-                "order": "ASC",
-            }
-        )
+        parameters = {
+            "symbol": request.pair,
+            "interval": INTERVALS[request.timeframe],
+            "outputsize": request.limit,
+            "timezone": "UTC",
+            "order": "ASC",
+        }
+        if request.start is not None:
+            parameters["start_date"] = request.start.astimezone(timezone.utc).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        if request.end is not None:
+            parameters["end_date"] = request.end.astimezone(timezone.utc).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        params = urlencode(parameters)
         return Request(
             f"{BASE_URL}?{params}",
             headers={
