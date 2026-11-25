@@ -28,6 +28,4 @@ def validate_settings() -> None:
     if MAX_SIMULTANEOUS_POSITIONS < 1:
         raise ValueError("At least one simultaneous position must be allowed.")
     if len(CURRENCY_PAIRS) != 4 or len(set(CURRENCY_PAIRS)) != 4:
-        raise ValueError(
-            "The initial currency universe must contain four unique pairs."
-        )
+        raise ValueError("The initial currency universe must contain four unique pairs.")
