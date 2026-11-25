@@ -51,7 +51,7 @@ def test_valid_request_is_returned_unchanged():
     assert validate_request(request) is request
 
 
-@pytest.mark.parametrize("request", [
+@pytest.mark.parametrize("invalid_request", [
     CandleRequest("EURUSD", "15m"),
     CandleRequest("EUR/EUR", "15m"),
     CandleRequest("EUR/USD", "2m"),
@@ -59,9 +59,9 @@ def test_valid_request_is_returned_unchanged():
     CandleRequest("EUR/USD", "15m", 5001),
     CandleRequest("EUR/USD", "15m", True),
 ])
-def test_invalid_requests_are_rejected(request):
+def test_invalid_requests_are_rejected(invalid_request):
     with pytest.raises(ValueError):
-        validate_request(request)
+        validate_request(invalid_request)
 
 
 def test_timeframe_duration_supports_configured_intervals():
