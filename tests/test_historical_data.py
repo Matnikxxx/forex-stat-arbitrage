@@ -211,3 +211,128 @@ def test_load_history_can_select_timeframe(tmp_path):
     storage.save_candles([fifteen], timeframe="15m")
     storage.save_candles([hourly], timeframe="1h")
     assert service.load_history("EUR/USD", timeframe="1h") == [hourly]
+
+
+class WindowProvider:
+    name = "window-provider"
+
+    def __init__(self, fail_on_call=None):
+        self.calls = []
+        self.fail_on_call = fail_on_call
+
+    def fetch_candles(self, request):
+        self.calls.append(request)
+        if self.fail_on_call == len(self.calls):
+            raise OSError("temporary provider outage")
+        return [
+            make_candle(index)
+            for index in range(4)
+            if request.start <= make_candle(index).timestamp <= request.end
+        ]
+
+
+def test_backfill_splits_large_range_into_bounded_non_overlapping_windows(tmp_path):
+    provider = WindowProvider()
+    storage = CandleStorage(tmp_path / "backfill.db")
+    service = HistoricalDataService(provider, storage)
+    result = service.backfill(
+        "EUR/USD", "15m", BASE, BASE + timedelta(minutes=45),
+        now=NOW, max_candles=2,
+    )
+    assert result.request_count == 2
+    assert result.fetched_count == 4
+    assert result.accepted_count == 4
+    assert result.stored_count == 4
+    assert [request.start for request in provider.calls] == [
+        BASE, BASE + timedelta(minutes=30)
+    ]
+    assert [request.end for request in provider.calls] == [
+        BASE + timedelta(minutes=15), BASE + timedelta(minutes=45)
+    ]
+    assert all(request.limit == 2 for request in provider.calls)
+    assert storage.load_candles("EUR/USD", timeframe="15m") == [
+        make_candle(index) for index in range(4)
+    ]
+
+
+def test_backfill_single_window_uses_one_provider_request(tmp_path):
+    provider = WindowProvider()
+    service = HistoricalDataService(
+        provider, CandleStorage(tmp_path / "single.db")
+    )
+    result = service.backfill(
+        "EUR/USD", "15m", BASE, BASE + timedelta(minutes=15),
+        now=NOW, max_candles=10,
+    )
+    assert result.request_count == 1
+    assert len(provider.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "start,end",
+    [
+        (datetime(2026, 1, 1), BASE + timedelta(hours=1)),
+        (BASE, datetime(2026, 1, 1, 1)),
+        (BASE, BASE),
+        (BASE + timedelta(hours=1), BASE),
+    ],
+)
+def test_backfill_rejects_invalid_date_ranges(tmp_path, start, end):
+    service, provider, _ = make_service(tmp_path, [make_candle(0)])
+    with pytest.raises(ValueError):
+        service.backfill("EUR/USD", "15m", start, end, now=NOW)
+    assert provider.calls == 0
+
+
+@pytest.mark.parametrize("max_candles", [0, 1, -1, 5001, True, 1.5])
+def test_backfill_rejects_invalid_chunk_sizes(tmp_path, max_candles):
+    service, provider, _ = make_service(tmp_path, [make_candle(0)])
+    with pytest.raises(ValueError, match="between 2 and 5000"):
+        service.backfill(
+            "EUR/USD", "15m", BASE, BASE + timedelta(hours=1),
+            now=NOW, max_candles=max_candles,
+        )
+    assert provider.calls == 0
+
+
+def test_backfill_rejects_unsupported_timeframe(tmp_path):
+    service, provider, _ = make_service(tmp_path, [make_candle(0)])
+    with pytest.raises(ValueError, match="Unsupported candle timeframe"):
+        service.backfill(
+            "EUR/USD", "2m", BASE, BASE + timedelta(hours=1), now=NOW
+        )
+    assert provider.calls == 0
+
+
+def test_backfill_preserves_completed_chunks_if_later_chunk_fails(tmp_path):
+    provider = WindowProvider(fail_on_call=2)
+    storage = CandleStorage(tmp_path / "partial.db")
+    service = HistoricalDataService(provider, storage)
+    with pytest.raises(ProviderUnavailable):
+        service.backfill(
+            "EUR/USD", "15m", BASE, BASE + timedelta(minutes=45),
+            now=NOW, max_candles=2,
+        )
+    assert storage.load_candles("EUR/USD", timeframe="15m") == [
+        make_candle(0), make_candle(1)
+    ]
+
+
+def test_backfill_does_not_mix_timeframes(tmp_path):
+    provider = WindowProvider()
+    storage = CandleStorage(tmp_path / "separate.db")
+    hourly = Candle("EUR/USD", BASE, 1.0, 1.3, 0.8, 1.2, 500.0)
+    storage.save_candles([hourly], timeframe="1h")
+    service = HistoricalDataService(provider, storage)
+    service.backfill(
+        "EUR/USD", "15m", BASE, BASE + timedelta(minutes=45),
+        now=NOW, max_candles=2,
+    )
+    assert storage.load_candles("EUR/USD", timeframe="1h") == [hourly]
+
+
+def test_backfill_rejects_empty_range_without_calling_provider(tmp_path):
+    service, provider, _ = make_service(tmp_path, [make_candle(0)])
+    with pytest.raises(ValueError, match="before end time"):
+        service.backfill("EUR/USD", "15m", BASE, BASE, now=NOW)
+    assert provider.calls == 0
