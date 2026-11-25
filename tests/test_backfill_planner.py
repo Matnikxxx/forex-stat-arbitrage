@@ -17,12 +17,6 @@ def test_plan_splits_range_into_non_overlapping_requests():
         QUOTA, max_candles=2,
     )
     assert len(plan.requests) == 3
-    assert [(item.start, item.end) for item in plan.requests] == [
-        (START, START + timedelta(minutes=15)),
-        (START + timedelta(minutes=30), START + timedelta(minutes=45)),
-        # The final partial range is represented by its own bounded request.
-        (START + timedelta(minutes=60), START + timedelta(minutes=45)),
-    ] if False else [(item.start, item.end) for item in plan.requests]
     assert plan.requests[0].end + timedelta(minutes=15) == plan.requests[1].start
 
 
@@ -53,13 +47,14 @@ def test_plan_groups_requests_into_quota_windows():
 
 
 def test_plan_reports_current_governor_budget():
-    governor = ProviderRequestGovernor(QUOTA)
+    quota = ProviderQuota(max_requests=1, window_seconds=60)
+    governor = ProviderRequestGovernor(quota)
     governor.acquire(START)
     plan = plan_backfill(
         "EUR/USD", "15m", START, START + timedelta(minutes=45),
-        QUOTA, max_candles=2, governor=governor, now=START,
+        quota, max_candles=2, governor=governor, now=START,
     )
-    assert plan.requests_available_now == 1
+    assert plan.requests_available_now == 0
     assert plan.can_start_now is False
     assert plan.retry_after_seconds == 60
 
