@@ -56,6 +56,8 @@ def plan_backfill(
         raise ValueError("Maximum candles must be between 2 and 5000.")
     if not isinstance(quota, ProviderQuota):
         raise ValueError("A ProviderQuota configuration is required.")
+    if governor is not None and governor.quota != quota:
+        raise ValueError("Planner quota must match the provider governor quota.")
 
     duration = timeframe_duration(timeframe)
     estimated_candles = math.floor((end - start) / duration) + 1
@@ -74,7 +76,9 @@ def plan_backfill(
         for index in range(0, len(requests), quota.max_requests)
     )
     windows_required = len(batches)
-    estimated_wait = max(0, windows_required - 1) * quota.window_seconds
+    quota_window_wait = max(0, windows_required - 1) * quota.window_seconds
+    spacing_wait = max(0, len(requests) - 1) * quota.min_interval_seconds
+    estimated_wait = max(quota_window_wait, spacing_wait)
 
     available_now = quota.max_requests
     can_start_now = True
