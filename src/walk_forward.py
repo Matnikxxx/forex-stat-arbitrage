@@ -49,12 +49,12 @@ def _validate_inputs(
         raise ValueError("Testing window must be an integer.")
     if training_window < 100:
         raise ValueError("Training window must be at least 100 observations.")
-    if testing_window < config.window + 2:
-        raise ValueError("Testing window must exceed the signal window.")
     if len(y) < training_window + testing_window:
         raise ValueError("Insufficient data for one complete walk-forward fold.")
     if any(not math.isfinite(value) or value <= 0 for value in y + x):
         raise ValueError("Prices must be finite and positive.")
+    if testing_window < config.window + 2:
+        raise ValueError("Testing window must exceed the signal window.")
     return y, x
 
 
