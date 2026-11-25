@@ -128,8 +128,21 @@ class HistoricalDataService:
 
         duration = timeframe_duration(timeframe)
         window = duration * (max_candles - 1)
+        checkpoint = self.storage.load_backfill_checkpoint(pair, timeframe)
+        if checkpoint is not None:
+            saved_start, saved_end, cursor, saved_limit = checkpoint
+            if (
+                saved_start != start
+                or saved_end != end
+                or saved_limit != max_candles
+            ):
+                raise ValueError(
+                    "An unfinished backfill exists with different parameters."
+                )
+        else:
+            cursor = start
+
         chunks: list[HistoricalSyncResult] = []
-        cursor = start
         while cursor <= end:
             chunk_end = min(cursor + window, end)
             request = CandleRequest(
@@ -141,14 +154,24 @@ class HistoricalDataService:
             )
             chunks.append(self.sync(request, now))
             cursor = chunk_end + duration
+            if cursor <= end:
+                self.storage.save_backfill_checkpoint(
+                    pair, timeframe, start, end, cursor, max_candles
+                )
 
+        self.storage.delete_backfill_checkpoint(pair, timeframe)
+        stored = (
+            chunks[-1].stored_count
+            if chunks
+            else len(self.storage.load_candles(pair, timeframe=timeframe))
+        )
         return HistoricalBackfillResult(
             pair=pair,
             timeframe=timeframe,
             request_count=len(chunks),
             fetched_count=sum(item.fetched_count for item in chunks),
             accepted_count=sum(item.accepted_count for item in chunks),
-            stored_count=chunks[-1].stored_count,
+            stored_count=stored,
             chunks=tuple(chunks),
         )
 
