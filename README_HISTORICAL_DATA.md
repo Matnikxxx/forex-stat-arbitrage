@@ -1,37 +1,26 @@
-# Historical Market Data Service
+# Timeframe-aware historical candle storage
 
-Phase 65 connects the provider-neutral market feed to SQLite candle storage.
+SQLite now stores each candle using a composite key of currency pair,
+timeframe, and UTC timestamp. The same pair and timestamp can therefore hold
+separate 15-minute and 1-hour candles without overwriting either record.
 
-## Synchronize history
+## Save and load
 
 ```python
-from datetime import datetime, timezone
-
-from src.historical_data import HistoricalDataService
-from src.market_feed import CandleRequest
-from src.market_storage import CandleStorage
-
-service = HistoricalDataService(provider, CandleStorage("data/market.db"))
-result = service.sync(
-    CandleRequest("EUR/USD", "15m", limit=500),
-    now=datetime.now(timezone.utc),
-)
-print(result.quality.coverage, result.quality.gaps)
+storage.save_candles(candles, timeframe="15m")
+history = storage.load_candles("EUR/USD", timeframe="15m")
 ```
 
-The provider must implement the `MarketDataProvider` interface from
-`src.market_feed`. The service validates provider output, excludes candles
-that have not fully closed, merges refreshed candles with stored history,
-and saves the result. A later provider response replaces a candle with the
-same pair and timestamp, allowing provider corrections without duplicates.
+The timeframe argument on save defaults to `"unknown"` for backwards
+compatibility with older callers. Loads without a timeframe return all
+partitions; strategy and research code should always select the exact
+timeframe.
 
-## Safety and current limitations
+Existing databases are migrated automatically. Pre-existing rows are placed
+in an `unknown` partition and preserved. On the first historical sync for a
+pair, those legacy rows are merged into the requested timeframe and the
+legacy partition is removed for that pair.
 
-- A provider outage or invalid response does not overwrite stored history.
-- Forming candles are never saved.
-- Missing intervals are reported; the service never invents candles.
-- The current provider request interface fetches a bounded recent window. It
-  does not yet request arbitrary date ranges, so this phase refreshes that
-  window and merges it with all locally stored history.
-- No API provider, key, broker connection, or real-money execution is added.
-- This remains a paper-trading research system.
+Historical synchronization keeps each interval isolated, applies provider
+corrections only within the matching interval, and reports gaps using that
+interval's duration. This does not add live execution or real-money trading.
