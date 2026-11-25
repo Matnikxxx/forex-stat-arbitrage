@@ -2,28 +2,31 @@
 
 ## Canonical candle format
 
-All providers must convert their responses into `src.market_data.Candle` before
-those prices can enter the research or paper-trading system. A candle contains:
+All providers convert responses into `src.market_data.Candle` before prices
+enter research or paper trading. A candle contains a BASE/QUOTE currency pair,
+a timezone-aware timestamp, and open, high, low, close and volume values.
 
-- Currency pair in `BASE/QUOTE` format.
-- A timezone-aware timestamp (stored in UTC).
-- Open, high, low, close and volume values.
-
-Validation rejects missing or malformed pairs, timezone-naive timestamps,
-non-finite or non-positive prices, negative volume, inconsistent OHLC values,
-mixed-pair series, duplicate timestamps and out-of-order candles.
-
-Use `is_candle_stale` to prevent old prices from being treated as current. The
-initial default freshness limit is five minutes; later provider/timeframe work
-must choose an appropriate limit for the selected candle interval.
+Validation rejects malformed pairs, naive timestamps, non-finite or
+non-positive prices, negative volume, inconsistent OHLC values, mixed-pair
+series, duplicate timestamps and out-of-order candles.
 
 ## Local historical storage
 
-`src.market_storage.CandleStorage` stores validated candles in SQLite. The
-primary key is the currency pair and UTC timestamp, so re-fetching a candle
-updates that record instead of creating a duplicate. Queries return candles
-in chronological order and can be limited to a time range.
+`CandleStorage` stores validated candles in SQLite using a composite key:
+currency pair, timeframe, and UTC timestamp. This prevents candles from
+different intervals from overwriting each other. Specify the timeframe when
+saving and loading data:
 
-This phase does not connect to a market-data provider or open trades. Provider
-adapters, gap detection by timeframe, and provider-specific freshness rules are
-separate follow-up work.
+```python
+storage.save_candles(candles, timeframe="15m")
+history = storage.load_candles("EUR/USD", timeframe="15m")
+```
+
+Existing databases are migrated automatically and their old rows are retained
+in an `unknown` timeframe partition until the historical service imports them
+into a selected interval. Loads without a timeframe remain available for
+backwards compatibility, but strategy and research code should always specify
+one.
+
+This layer only validates and stores historical prices. It does not place
+orders or connect to a broker.
