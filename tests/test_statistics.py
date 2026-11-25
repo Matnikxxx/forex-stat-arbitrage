@@ -80,7 +80,7 @@ def test_rolling_z_scores_aligns_results_to_input_series():
 
 
 def test_rolling_z_scores_marks_constant_windows_as_none():
-    assert rolling_z_scores([2, 2, 2], 2) == [None, None]
+    assert rolling_z_scores([2, 2, 2], 2) == [None, None, None]
 
 
 def test_rolling_z_scores_rejects_invalid_window():
