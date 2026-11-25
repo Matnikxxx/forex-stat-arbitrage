@@ -63,7 +63,13 @@ def test_series_must_be_non_empty_same_pair_and_chronological():
         validate_candle_series([])
     with pytest.raises(CandleValidationError, match="one pair"):
         validate_candle_series(
-            [make_candle(), make_candle(pair="GBP/USD", timestamp=BASE_TIME + timedelta(minutes=1))]
+            [
+                make_candle(),
+                make_candle(
+                    pair="GBP/USD",
+                    timestamp=BASE_TIME + timedelta(minutes=1),
+                ),
+            ]
         )
     with pytest.raises(CandleValidationError, match="chronological"):
         validate_candle_series(
