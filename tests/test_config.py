@@ -15,4 +15,5 @@ def test_initial_capital_and_risk_limits():
 def test_initial_currency_universe():
     assert len(config.CURRENCY_PAIRS) == 4
     assert len(set(config.CURRENCY_PAIRS)) == 4
-    assert set(config.SUPPORTED_CURRENCIES) == {"EUR", "GBP", "AUD", "USD", "JPY"}
+    expected_currencies = {"EUR", "GBP", "AUD", "USD", "JPY"}
+    assert set(config.SUPPORTED_CURRENCIES) == expected_currencies
