@@ -1,6 +1,7 @@
 """Twelve Data REST adapter for validated Forex candle history."""
 
 import json
+import math
 import os
 import time
 from datetime import datetime, timezone
@@ -14,7 +15,6 @@ from src.market_feed import (
     CandleRequest,
     MarketDataError,
     ProviderUnavailable,
-    TIMEFRAME_SECONDS,
     validate_request,
 )
 
@@ -53,12 +53,16 @@ class TwelveDataProvider:
         self.api_key = (api_key or os.getenv("TWELVE_DATA_API_KEY", "")).strip()
         if not self.api_key:
             raise ValueError("Set TWELVE_DATA_API_KEY before using this provider.")
-        if timeout <= 0:
-            raise ValueError("Request timeout must be positive.")
-        if isinstance(max_retries, bool) or max_retries < 0:
-            raise ValueError("Maximum retries cannot be negative.")
-        if retry_delay < 0:
-            raise ValueError("Retry delay cannot be negative.")
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("Request timeout must be positive and finite.")
+        if (
+            isinstance(max_retries, bool)
+            or not isinstance(max_retries, int)
+            or max_retries < 0
+        ):
+            raise ValueError("Maximum retries must be a non-negative integer.")
+        if not math.isfinite(retry_delay) or retry_delay < 0:
+            raise ValueError("Retry delay must be non-negative and finite.")
         self.timeout = timeout
         self.max_retries = max_retries
         self.retry_delay = retry_delay
