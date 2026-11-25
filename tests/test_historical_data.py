@@ -336,3 +336,109 @@ def test_backfill_rejects_empty_range_without_calling_provider(tmp_path):
     with pytest.raises(ValueError, match="before end time"):
         service.backfill("EUR/USD", "15m", BASE, BASE, now=NOW)
     assert provider.calls == 0
+
+
+def test_backfill_resumes_from_saved_checkpoint_after_provider_failure(tmp_path):
+    storage = CandleStorage(tmp_path / "resume.db")
+    first_provider = WindowProvider(fail_on_call=2)
+    first_service = HistoricalDataService(first_provider, storage)
+    with pytest.raises(ProviderUnavailable):
+        first_service.backfill(
+            "EUR/USD", "15m", BASE, BASE + timedelta(minutes=45),
+            now=NOW, max_candles=2,
+        )
+
+    checkpoint = storage.load_backfill_checkpoint("EUR/USD", "15m")
+    assert checkpoint is not None
+    assert checkpoint[2] == BASE + timedelta(minutes=30)
+
+    resumed_provider = WindowProvider()
+    resumed_service = HistoricalDataService(resumed_provider, storage)
+    result = resumed_service.backfill(
+        "EUR/USD", "15m", BASE, BASE + timedelta(minutes=45),
+        now=NOW, max_candles=2,
+    )
+    assert result.request_count == 1
+    assert result.stored_count == 4
+    assert [request.start for request in resumed_provider.calls] == [
+        BASE + timedelta(minutes=30)
+    ]
+    assert storage.load_backfill_checkpoint("EUR/USD", "15m") is None
+    assert storage.load_candles("EUR/USD", timeframe="15m") == [
+        make_candle(index) for index in range(4)
+    ]
+
+
+def test_backfill_rejects_different_parameters_while_checkpoint_exists(tmp_path):
+    storage = CandleStorage(tmp_path / "mismatch.db")
+    service = HistoricalDataService(WindowProvider(fail_on_call=2), storage)
+    with pytest.raises(ProviderUnavailable):
+        service.backfill(
+            "EUR/USD", "15m", BASE, BASE + timedelta(minutes=45),
+            now=NOW, max_candles=2,
+        )
+    retry = HistoricalDataService(WindowProvider(), storage)
+    with pytest.raises(ValueError, match="different parameters"):
+        retry.backfill(
+            "EUR/USD", "15m", BASE, BASE + timedelta(minutes=45),
+            now=NOW, max_candles=3,
+        )
+
+
+def test_backfill_checkpoint_isolated_by_pair_and_timeframe(tmp_path):
+    storage = CandleStorage(tmp_path / "isolation.db")
+    storage.save_backfill_checkpoint(
+        "EUR/USD", "15m", BASE, BASE + timedelta(hours=1),
+        BASE + timedelta(minutes=15), 100,
+    )
+    assert storage.load_backfill_checkpoint("EUR/USD", "15m") is not None
+    assert storage.load_backfill_checkpoint("GBP/USD", "15m") is None
+    assert storage.load_backfill_checkpoint("EUR/USD", "1h") is None
+
+
+def test_backfill_checkpoint_survives_storage_reopen(tmp_path):
+    path = tmp_path / "persistent.db"
+    storage = CandleStorage(path)
+    storage.save_backfill_checkpoint(
+        "EUR/USD", "15m", BASE, BASE + timedelta(hours=1),
+        BASE + timedelta(minutes=15), 100,
+    )
+    reopened = CandleStorage(path)
+    assert reopened.load_backfill_checkpoint("EUR/USD", "15m") == (
+        BASE, BASE + timedelta(hours=1), BASE + timedelta(minutes=15), 100
+    )
+
+
+def test_backfill_checkpoint_rejects_naive_timestamps(tmp_path):
+    storage = CandleStorage(tmp_path / "invalid-checkpoint.db")
+    with pytest.raises(ValueError, match="timezone"):
+        storage.save_backfill_checkpoint(
+            "EUR/USD", "15m", datetime(2026, 1, 1), BASE,
+            BASE + timedelta(minutes=15), 100,
+        )
+
+
+def test_completed_backfill_removes_checkpoint(tmp_path):
+    storage = CandleStorage(tmp_path / "complete.db")
+    service = HistoricalDataService(WindowProvider(), storage)
+    service.backfill(
+        "EUR/USD", "15m", BASE, BASE + timedelta(minutes=15),
+        now=NOW, max_candles=10,
+    )
+    assert storage.load_backfill_checkpoint("EUR/USD", "15m") is None
+
+
+def test_backfill_rejects_mismatched_range_without_provider_call(tmp_path):
+    storage = CandleStorage(tmp_path / "range-mismatch.db")
+    storage.save_backfill_checkpoint(
+        "EUR/USD", "15m", BASE, BASE + timedelta(hours=1),
+        BASE + timedelta(minutes=15), 100,
+    )
+    provider = WindowProvider()
+    service = HistoricalDataService(provider, storage)
+    with pytest.raises(ValueError, match="different parameters"):
+        service.backfill(
+            "EUR/USD", "15m", BASE, BASE + timedelta(minutes=45),
+            now=NOW, max_candles=100,
+        )
+    assert provider.calls == []
