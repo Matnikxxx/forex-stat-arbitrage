@@ -107,3 +107,26 @@ def test_plan_does_not_call_provider_or_modify_storage():
         "EUR/USD", "15m", START, START + timedelta(hours=1), QUOTA
     )
     assert plan.requests
+
+
+def test_plan_includes_minimum_spacing_in_wait_estimate():
+    quota = ProviderQuota(
+        max_requests=10, window_seconds=60, min_interval_seconds=3
+    )
+    plan = plan_backfill(
+        "EUR/USD", "15m", START, START + timedelta(minutes=75),
+        quota, max_candles=2,
+    )
+    assert len(plan.requests) == 3
+    assert plan.estimated_wait_seconds == 6
+
+
+def test_plan_rejects_governor_with_different_quota():
+    governor = ProviderRequestGovernor(
+        ProviderQuota(max_requests=1, window_seconds=60)
+    )
+    with pytest.raises(ValueError, match="must match"):
+        plan_backfill(
+            "EUR/USD", "15m", START, START + timedelta(minutes=15),
+            QUOTA, governor=governor,
+        )
