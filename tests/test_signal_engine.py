@@ -28,7 +28,7 @@ def make_candidate():
     )
 
 
-def make_prices(last_spread=0.0, size=30):
+def make_prices(last_spread=0.0, size=120):
     spread = [0.1 if index % 2 else -0.1 for index in range(size - 1)]
     spread.append(last_spread)
     return [math.exp(value) for value in spread], [1.0] * size
