@@ -17,7 +17,7 @@ jobs:
           command: python -m flake8 .
       - run:
           name: Check formatting with Black
-          command: python -m black --check .
+          command: python -m black --check --diff .
 
 workflows:
   test-on-push:
