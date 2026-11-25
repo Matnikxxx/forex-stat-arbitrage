@@ -1,7 +1,7 @@
 """Safe synchronization of provider candles into local historical storage."""
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from src.market_data import Candle
 from src.market_feed import (
@@ -12,6 +12,7 @@ from src.market_feed import (
     fetch_market_data,
     filter_closed_candles,
     merge_candle_series,
+    timeframe_duration,
 )
 from src.market_storage import CandleStorage
 
@@ -27,6 +28,19 @@ class HistoricalSyncResult:
     stored_count: int
     latest_timestamp: datetime
     quality: DataQualityReport
+
+
+@dataclass(frozen=True)
+class HistoricalBackfillResult:
+    """Summary of a multi-request historical backfill operation."""
+
+    pair: str
+    timeframe: str
+    request_count: int
+    fetched_count: int
+    accepted_count: int
+    stored_count: int
+    chunks: tuple[HistoricalSyncResult, ...]
 
 
 class HistoricalDataService:
@@ -81,6 +95,61 @@ class HistoricalDataService:
             stored_count=len(combined),
             latest_timestamp=combined[-1].timestamp,
             quality=quality,
+        )
+
+    def backfill(
+        self,
+        pair: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+        now: datetime | None = None,
+        max_candles: int = 5000,
+    ) -> HistoricalBackfillResult:
+        """Download a date range in bounded, non-overlapping candle windows.
+
+        Each successful chunk is stored immediately. If a later provider call
+        fails, earlier chunks remain safely available and the exception is
+        propagated so callers can retry the unfinished range.
+        """
+        for label, value in (("Start", start), ("End", end)):
+            if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+                raise ValueError(f"{label} time must include a timezone.")
+        start = start.astimezone(timezone.utc)
+        end = end.astimezone(timezone.utc)
+        if start >= end:
+            raise ValueError("Start time must be before end time.")
+        if (
+            isinstance(max_candles, bool)
+            or not isinstance(max_candles, int)
+            or not 1 <= max_candles <= 5000
+        ):
+            raise ValueError("Maximum candles must be between 1 and 5000.")
+
+        duration = timeframe_duration(timeframe)
+        window = duration * (max_candles - 1)
+        chunks: list[HistoricalSyncResult] = []
+        cursor = start
+        while cursor <= end:
+            chunk_end = min(cursor + window, end)
+            request = CandleRequest(
+                pair=pair,
+                timeframe=timeframe,
+                limit=max_candles,
+                start=cursor,
+                end=chunk_end,
+            )
+            chunks.append(self.sync(request, now))
+            cursor = chunk_end + duration
+
+        return HistoricalBackfillResult(
+            pair=pair,
+            timeframe=timeframe,
+            request_count=len(chunks),
+            fetched_count=sum(item.fetched_count for item in chunks),
+            accepted_count=sum(item.accepted_count for item in chunks),
+            stored_count=chunks[-1].stored_count,
+            chunks=tuple(chunks),
         )
 
     def load_history(
