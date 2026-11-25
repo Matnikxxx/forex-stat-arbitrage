@@ -284,10 +284,10 @@ def test_backfill_rejects_invalid_date_ranges(tmp_path, start, end):
     assert provider.calls == 0
 
 
-@pytest.mark.parametrize("max_candles", [0, -1, 5001, True, 1.5])
+@pytest.mark.parametrize("max_candles", [0, 1, -1, 5001, True, 1.5])
 def test_backfill_rejects_invalid_chunk_sizes(tmp_path, max_candles):
     service, provider, _ = make_service(tmp_path, [make_candle(0)])
-    with pytest.raises(ValueError, match="between 1 and 5000"):
+    with pytest.raises(ValueError, match="between 2 and 5000"):
         service.backfill(
             "EUR/USD", "15m", BASE, BASE + timedelta(hours=1),
             now=NOW, max_candles=max_candles,
