@@ -30,11 +30,10 @@ class HistoricalSyncResult:
 
 
 class HistoricalDataService:
-    """Fetch closed candles, merge corrections, and persist a clean history.
+    """Fetch closed candles and persist history in isolated timeframe partitions.
 
-    Providers currently expose bounded recent-window requests rather than
-    timestamp-range requests. Each sync therefore refreshes that window,
-    merges it with local history, and never fabricates missing candles.
+    Legacy records stored before timeframe support are imported into the first
+    requested timeframe on sync. New records never mix different intervals.
     """
 
     def __init__(
@@ -50,23 +49,28 @@ class HistoricalDataService:
         request: CandleRequest,
         now: datetime | None = None,
     ) -> HistoricalSyncResult:
-        """Synchronize one pair; invalid or forming-only data is not persisted."""
+        """Synchronize one pair/timeframe without mixing other intervals."""
         fetched = fetch_market_data(self.provider, request)
         closed = filter_closed_candles(fetched, request.timeframe, now)
         if not closed:
             raise ValueError("Provider returned no fully closed candles.")
 
-        try:
-            existing = self.storage.load_candles(request.pair)
-        except ValueError:
-            raise
-
-        combined = (
-            merge_candle_series(existing, closed)
-            if existing
-            else closed
+        existing = self.storage.load_candles(
+            request.pair, timeframe=request.timeframe
         )
-        self.storage.save_candles(combined)
+        legacy = self.storage.load_candles(
+            request.pair, timeframe="unknown"
+        )
+        sources = [legacy, existing, closed]
+        non_empty = [series for series in sources if series]
+        combined = (
+            merge_candle_series(*non_empty)
+            if len(non_empty) > 1
+            else non_empty[0]
+        )
+        self.storage.save_candles(combined, timeframe=request.timeframe)
+        if legacy:
+            self.storage.delete_timeframe(request.pair, "unknown")
         quality = assess_data_quality(combined, request.timeframe)
 
         return HistoricalSyncResult(
@@ -84,6 +88,9 @@ class HistoricalDataService:
         pair: str,
         start: datetime | None = None,
         end: datetime | None = None,
+        timeframe: str | None = None,
     ) -> list[Candle]:
-        """Load validated historical candles from local storage."""
-        return self.storage.load_candles(pair, start=start, end=end)
+        """Load local history; specify timeframe to avoid mixed intervals."""
+        return self.storage.load_candles(
+            pair, start=start, end=end, timeframe=timeframe
+        )
