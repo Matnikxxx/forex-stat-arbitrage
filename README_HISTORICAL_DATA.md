@@ -51,3 +51,14 @@ service does not invent candles for weekends, holidays, provider omissions, or
 rate-limited requests. A successful response is not proof that the provider
 has supplied every historical candle; inspect the returned coverage and gap
 reports. Provider quotas and account history limits still apply.
+
+
+## Resumable backfills
+
+Backfill progress is stored in the same SQLite database as candle history.
+If a provider fails after one or more successful windows, rerun the exact same
+backfill call (same pair, timeframe, date range, and candle cap). The service
+continues from the first unfinished window instead of downloading completed
+windows again. Progress is isolated by pair and timeframe and is removed when
+the requested range completes. A different request for the same pair/timeframe
+is rejected while an unfinished job exists.
