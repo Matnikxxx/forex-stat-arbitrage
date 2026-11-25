@@ -158,7 +158,7 @@ def test_slippage_cannot_create_negative_fill():
         open_paper_position(
             PaperAccount(), dependent_symbol="EUR/USD", independent_symbol="GBP/USD",
             side=PositionSide.LONG_SPREAD, units_a=1000, units_b=1000,
-            quote_a=qa(0.0001, 0.0002), quote_b=qa(),
+            quote_a=qa(), quote_b=qa(0.0001, 0.0002),
             slippage=0.001,
         )
 
