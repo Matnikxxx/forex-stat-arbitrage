@@ -83,11 +83,12 @@ def test_series_must_be_non_empty_same_pair_and_chronological():
 def test_stale_candle_detection_uses_utc_time():
     now = BASE_TIME + timedelta(minutes=6)
     assert is_candle_stale(make_candle(), now=now)
-    assert not is_candle_stale(
-        make_candle(), now=now, max_age=timedelta(minutes=10)
-    )
+    assert not is_candle_stale(make_candle(), now=now, max_age=timedelta(minutes=10))
 
 
 def test_stale_check_rejects_naive_current_time():
     with pytest.raises(ValueError, match="timezone"):
-        is_candle_stale(make_candle(), now=datetime(2026, 1, 1))
+        is_candle_stale(
+            make_candle(),
+            now=datetime(2026, 1, 1),
+        )
