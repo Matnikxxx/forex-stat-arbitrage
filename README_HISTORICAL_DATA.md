@@ -145,3 +145,31 @@ same plan to resume later. Provider outages and invalid market data are not
 silently converted into quota deferrals; those errors remain visible to the
 caller. This remains a historical-data feature for research and paper trading,
 not live order execution.
+
+
+## Backfill retry scheduling
+
+Use `schedule_backfill_retry` to calculate a future retry time after a
+temporary interruption. The delay grows exponentially from a configurable
+base and stops growing at a local maximum. A provider-supplied Retry-After
+delay always takes precedence when it is longer:
+
+```python
+from datetime import datetime, timezone
+from src.backfill_retry import schedule_backfill_retry
+
+retry = schedule_backfill_retry(
+    attempt=3,
+    now=datetime.now(timezone.utc),
+    base_delay_seconds=5,
+    max_delay_seconds=300,
+    provider_retry_after_seconds=60,
+)
+print(retry.next_attempt_at)
+```
+
+The function only calculates a schedule. It does not sleep, start a worker,
+or make a provider request. The caller should schedule the next attempt for
+the returned UTC time and keep using the same backfill parameters so the
+SQLite checkpoint can resume safely. Provider Retry-After values are never
+shortened to fit the local backoff cap.
