@@ -204,3 +204,15 @@ delete a schedule after successful completion or replace it after another
 temporary failure. This storage layer never starts timers, sleeps, calls a
 provider, or places trades; the application remains responsible for deciding
 when to invoke a due retry.
+
+
+## Backfill retry manager
+
+BackfillRetryManager connects retry scheduling and SQLite persistence. After a
+temporary failure, call record_failure with the pair, timeframe, current
+timezone-aware time, and optional provider Retry-After delay. Repeated failures
+increment the attempt and apply capped exponential backoff automatically.
+After an application restart, due_retries(now) reads the persisted schedules.
+Call mark_completed only after the corresponding backfill has completed
+successfully. The manager does not launch workers, poll continuously, sleep,
+or make provider requests; the application controls when due work is run.
