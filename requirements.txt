@@ -1,2 +1,4 @@
 streamlit>=1.40,<2
 pytest>=8,<9
+black>=24,<27
+flake8>=7,<8
