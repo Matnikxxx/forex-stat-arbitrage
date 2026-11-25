@@ -145,7 +145,7 @@ class TwelveDataProvider:
                 if attempt + 1 >= attempts:
                     raise ProviderUnavailable("Twelve Data request timed out.") from error
             if self.retry_delay:
-                time.sleep(self.retry_delay * (2**attempt)
+                time.sleep(self.retry_delay * (2**attempt))
         raise ProviderUnavailable("Twelve Data request failed.")
 
     @staticmethod
