@@ -73,7 +73,10 @@ def test_sync_rejects_forming_only_response_without_writing(tmp_path):
     service, _, storage = make_service(tmp_path, [make_candle(10)])
 
     with pytest.raises(ValueError, match="fully closed"):
-        service.sync(CandleRequest("EUR/USD", "15m"), NOW)
+        service.sync(
+            CandleRequest("EUR/USD", "15m"),
+            BASE + timedelta(hours=2),
+        )
 
     assert storage.load_candles("EUR/USD") == []
 
