@@ -76,3 +76,38 @@ rate-limit cooldown (for example, from a Retry-After header), call
 `governor.defer(seconds)`. Quotas are configured per provider instance and
 must be set to the provider's current documented limits; they do not infer or
 guarantee an account's remaining remote API credits.
+
+
+## Backfill preflight planning
+
+Use `plan_backfill` before starting a large download to estimate its bounded
+provider requests and group them into batches that fit the configured rolling
+quota. The planner is read-only: it does not call the provider or write candles.
+
+```python
+from src.backfill_planner import plan_backfill
+from src.provider_quota import ProviderQuota, ProviderRequestGovernor
+
+quota = ProviderQuota(max_requests=8, window_seconds=60, min_interval_seconds=1)
+governor = ProviderRequestGovernor(quota)
+plan = plan_backfill(
+    pair="EUR/USD",
+    timeframe="15m",
+    start=start,
+    end=end,
+    quota=quota,
+    max_candles=1000,
+    governor=governor,
+)
+print(plan.estimated_candles, len(plan.requests))
+print(plan.quota_windows_required, plan.estimated_wait_seconds)
+print(plan.can_start_now, plan.retry_after_seconds)
+```
+
+The plan reports estimated candle count, exact request windows, quota-sized
+batches, currently available local request budget, and an estimated minimum
+wait based on the configured rolling window and minimum spacing. These are
+planning estimates: provider history limits, missing market sessions, remote
+credits, and provider-specific rules can change the actual result. Configure
+the quota from the provider's current terms; this feature does not discover
+remote account credits or bypass rate limits.
