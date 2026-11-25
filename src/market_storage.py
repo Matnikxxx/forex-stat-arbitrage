@@ -69,7 +69,9 @@ class CandleStorage:
         """Load one pair in chronological order, optionally within a time range."""
         if not pair or "/" not in pair:
             raise ValueError("Currency pair must use BASE/QUOTE format.")
-        if start is not None and (start.tzinfo is None or start.utcoffset() is None):
+        if start is not None and (
+            start.tzinfo is None or start.utcoffset() is None
+        ):
             raise ValueError("Start time must include a timezone.")
         if end is not None and (end.tzinfo is None or end.utcoffset() is None):
             raise ValueError("End time must include a timezone.")
