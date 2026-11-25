@@ -50,8 +50,11 @@ def schedule_backfill_retry(
     if max_delay_seconds < base_delay_seconds:
         raise ValueError("Maximum delay must be at least the base delay.")
 
-    exponent = min(attempt - 1, 1023)
-    local_delay = min(max_delay_seconds, base_delay_seconds * (2 ** exponent))
+    cap_attempt = math.ceil(math.log2(max_delay_seconds / base_delay_seconds))
+    if attempt - 1 >= cap_attempt:
+        local_delay = max_delay_seconds
+    else:
+        local_delay = base_delay_seconds * (2 ** (attempt - 1))
     delay = max(local_delay, float(provider_retry_after_seconds))
     current = now.astimezone(timezone.utc)
 
