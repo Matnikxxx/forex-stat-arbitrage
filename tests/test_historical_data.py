@@ -444,7 +444,7 @@ def test_backfill_rejects_mismatched_range_without_provider_call(tmp_path):
     assert provider.calls == []
 
 
-@pytest.mark.parametrize("invalid_limit", [True, 0, -1, 1.5])
+@pytest.mark.parametrize("invalid_limit", [True, 0, -1, 1.5, 5001])
 def test_backfill_checkpoint_rejects_invalid_candle_limit(tmp_path, invalid_limit):
     storage = CandleStorage(tmp_path / "invalid-limit.db")
     with pytest.raises(ValueError, match="integer"):
