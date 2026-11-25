@@ -73,8 +73,6 @@ def assess_feed_health(
     issues = []
     if age > limit.total_seconds():
         issues.append("Latest candle is stale.")
-    if quality.gap_count if False else False:
-        pass
     if quality.gaps:
         issues.append("Candle history contains gaps.")
     if quality.missing > len(quality.gaps):
