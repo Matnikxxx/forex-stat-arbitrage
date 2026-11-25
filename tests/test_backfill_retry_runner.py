@@ -34,7 +34,7 @@ class Provider:
 def build(tmp_path, provider):
     service = HistoricalDataService(provider, CandleStorage(tmp_path / "candles.db"))
     retries = BackfillRetryManager(BackfillRetryStorage(tmp_path / "retries.db"))
-    plan = plan_backfill("EUR/USD", "15m", NOW, NOW + timedelta(minutes=75),
+    plan = plan_backfill("EUR/USD", "15m", NOW - timedelta(minutes=75), NOW,
                          ProviderQuota(max_requests=20, window_seconds=60), max_candles=2)
     return service, retries, plan
 
@@ -74,7 +74,7 @@ def test_different_pair_does_not_consume_due_retry(tmp_path):
     provider = Provider()
     service, retries, _ = build(tmp_path, provider)
     retries.record_failure("EUR/USD", "15m", NOW)
-    other = plan_backfill("GBP/USD", "15m", NOW, NOW + timedelta(minutes=75),
+    other = plan_backfill("GBP/USD", "15m", NOW - timedelta(minutes=75), NOW,
                           ProviderQuota(max_requests=20, window_seconds=60), max_candles=2)
     assert execute_due_backfill(service, other, retries, NOW + timedelta(days=1)) is None
     assert provider.calls == 0
