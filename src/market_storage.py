@@ -42,8 +42,7 @@ class CandleStorage:
             }
             if not columns:
                 self._create_schema(connection)
-                return
-            if "timeframe" not in columns:
+            elif "timeframe" not in columns:
                 connection.execute("ALTER TABLE candles RENAME TO candles_legacy")
                 self._create_schema(connection)
                 connection.execute(
@@ -55,6 +54,92 @@ class CandleStorage:
                     """
                 )
                 connection.execute("DROP TABLE candles_legacy")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS backfill_checkpoints (
+                    pair TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    start TEXT NOT NULL,
+                    end TEXT NOT NULL,
+                    next_start TEXT NOT NULL,
+                    max_candles INTEGER NOT NULL,
+                    PRIMARY KEY (pair, timeframe)
+                )
+                """
+            )
+
+    def load_backfill_checkpoint(
+        self, pair: str, timeframe: str
+    ) -> tuple[datetime, datetime, datetime, int] | None:
+        """Load a persisted backfill cursor for one pair and timeframe."""
+        self._validate_timeframe(timeframe)
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT start, end, next_start, max_candles
+                FROM backfill_checkpoints
+                WHERE pair = ? AND timeframe = ?
+                """,
+                (pair, timeframe),
+            ).fetchone()
+        if row is None:
+            return None
+        return (
+            datetime.fromisoformat(row[0]),
+            datetime.fromisoformat(row[1]),
+            datetime.fromisoformat(row[2]),
+            row[3],
+        )
+
+    def save_backfill_checkpoint(
+        self,
+        pair: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+        next_start: datetime,
+        max_candles: int,
+    ) -> None:
+        """Persist the next unprocessed candle window after a successful chunk."""
+        self._validate_timeframe(timeframe)
+        values = (start, end, next_start)
+        if any(
+            value.tzinfo is None or value.utcoffset() is None
+            for value in values
+        ):
+            raise ValueError("Checkpoint times must include a timezone.")
+        if not isinstance(max_candles, int) or isinstance(max_candles, bool):
+            raise ValueError("Checkpoint candle limit must be an integer.")
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO backfill_checkpoints
+                (pair, timeframe, start, end, next_start, max_candles)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(pair, timeframe) DO UPDATE SET
+                    start = excluded.start,
+                    end = excluded.end,
+                    next_start = excluded.next_start,
+                    max_candles = excluded.max_candles
+                """,
+                (
+                    pair,
+                    timeframe,
+                    start.astimezone(timezone.utc).isoformat(),
+                    end.astimezone(timezone.utc).isoformat(),
+                    next_start.astimezone(timezone.utc).isoformat(),
+                    max_candles,
+                ),
+            )
+
+    def delete_backfill_checkpoint(self, pair: str, timeframe: str) -> None:
+        """Remove a completed backfill cursor."""
+        self._validate_timeframe(timeframe)
+        with self._connect() as connection:
+            connection.execute(
+                "DELETE FROM backfill_checkpoints WHERE pair = ? AND timeframe = ?",
+                (pair, timeframe),
+            )
 
     @staticmethod
     def _validate_timeframe(timeframe: str | None) -> str | None:
