@@ -216,3 +216,35 @@ After an application restart, due_retries(now) reads the persisted schedules.
 Call mark_completed only after the corresponding backfill has completed
 successfully. The manager does not launch workers, poll continuously, sleep,
 or make provider requests; the application controls when due work is run.
+
+
+## Running a due backfill retry
+
+The retry manager exposes persisted due schedules, while
+`execute_due_backfill` provides a safe execution gate for one retry. The
+application supplies the original `BackfillPlan` so the date range and
+per-request candle cap remain explicit:
+
+```python
+from datetime import datetime, timezone
+from src.backfill_retry_runner import execute_due_backfill
+
+outcome = execute_due_backfill(
+    service=service,
+    plan=original_plan,
+    retry_manager=retry_manager,
+    now=datetime.now(timezone.utc),
+)
+if outcome is None:
+    print("No retry is due for this plan.")
+elif outcome.execution.completed:
+    print("Backfill retry completed.")
+```
+
+A missing or future retry is a no-op and makes no provider request. A due
+retry runs through the managed executor: success clears the schedule, quota
+deferral or provider outage updates the persistent retry schedule, and
+validation errors remain visible. The application may inspect
+`due_retries(now)` and invoke this gate for each matching plan. This is
+caller-driven: it does not create polling, timers, background workers, or
+live trading actions.
