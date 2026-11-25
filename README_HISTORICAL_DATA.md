@@ -173,3 +173,34 @@ or make a provider request. The caller should schedule the next attempt for
 the returned UTC time and keep using the same backfill parameters so the
 SQLite checkpoint can resume safely. Provider Retry-After values are never
 shortened to fit the local backoff cap.
+
+
+## Persistent backfill retry schedules
+
+BackfillRetryStorage stores retry metadata in SQLite so a process restart does
+not lose the next scheduled attempt. Save the BackfillRetrySchedule returned
+by schedule_backfill_retry as a BackfillRetryState:
+
+```python
+from src.backfill_retry import schedule_backfill_retry
+from src.backfill_retry_storage import BackfillRetryState, BackfillRetryStorage
+
+schedule = schedule_backfill_retry(attempt=2, now=now)
+retry_store = BackfillRetryStorage("data/market.db")
+retry_store.save(BackfillRetryState(
+    pair="EUR/USD",
+    timeframe="15m",
+    attempt=schedule.attempt,
+    next_attempt_at=schedule.next_attempt_at,
+    delay_seconds=schedule.delay_seconds,
+    provider_delay_seconds=schedule.provider_delay_seconds,
+))
+due = retry_store.load_due(now)
+```
+
+Schedules are isolated by pair and timeframe. load_due returns only retries
+whose UTC execution time has arrived, in deterministic order. A caller may
+delete a schedule after successful completion or replace it after another
+temporary failure. This storage layer never starts timers, sleeps, calls a
+provider, or places trades; the application remains responsible for deciding
+when to invoke a due retry.
