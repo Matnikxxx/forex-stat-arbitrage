@@ -56,8 +56,8 @@ class StubProvider:
 
 
 @pytest.fixture
-def storage():
-    instance = CandleStorage(":memory:")
+def storage(tmp_path):
+    instance = CandleStorage(tmp_path / "backfill.sqlite")
     yield instance
 
 
