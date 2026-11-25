@@ -19,8 +19,7 @@ class CandleStorage:
 
     def _create_table(self) -> None:
         with self._connect() as connection:
-            connection.execute(
-                """
+            connection.execute("""
                 CREATE TABLE IF NOT EXISTS candles (
                     pair TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
@@ -31,8 +30,7 @@ class CandleStorage:
                     volume REAL NOT NULL,
                     PRIMARY KEY (pair, timestamp)
                 )
-                """
-            )
+                """)
 
     def save_candles(self, candles: list[Candle]) -> int:
         """Validate and save candles, replacing matching pair/time records."""
