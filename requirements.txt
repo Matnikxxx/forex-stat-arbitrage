@@ -1,3 +1,4 @@
 streamlit>=1.40,<2
 pytest>=8,<9
 ruff>=0.14,<1
+statsmodels>=0.14,<1
