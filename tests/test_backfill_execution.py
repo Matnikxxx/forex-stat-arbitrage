@@ -59,7 +59,6 @@ class StubProvider:
 def storage():
     instance = CandleStorage(":memory:")
     yield instance
-    instance.close()
 
 
 def make_plan(quota, max_candles=2):
