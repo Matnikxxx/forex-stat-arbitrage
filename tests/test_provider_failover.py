@@ -86,7 +86,7 @@ def test_all_unavailable_raises_clear_error():
 
 
 def test_empty_provider_list_is_rejected():
-    with pytest.raises(ValueError, match="at least one"):
+    with pytest.raises(ValueError, match="(?i)at least one"):
         FallbackMarketDataProvider([])
 
 
