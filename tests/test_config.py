@@ -12,7 +12,7 @@ def test_initial_capital_and_risk_limits():
     assert config.MAX_SIMULTANEOUS_POSITIONS == 2
 
 
-def test_initial_currency_universe_has_six_possible_pairs_from_five_currencies():
+def test_initial_currency_universe():
     assert len(config.CURRENCY_PAIRS) == 4
     assert len(set(config.CURRENCY_PAIRS)) == 4
     assert set(config.SUPPORTED_CURRENCIES) == {"EUR", "GBP", "AUD", "USD", "JPY"}
