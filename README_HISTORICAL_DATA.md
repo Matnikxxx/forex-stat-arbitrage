@@ -62,3 +62,17 @@ continues from the first unfinished window instead of downloading completed
 windows again. Progress is isolated by pair and timeframe and is removed when
 the requested range completes. A different request for the same pair/timeframe
 is rejected while an unfinished job exists.
+
+
+## Provider quota protection
+
+Wrap a provider with `QuotaAwareProvider` and a `ProviderRequestGovernor`
+to enforce a rolling request limit and minimum spacing between calls. A blocked
+request raises `ProviderQuotaExceeded`, which is a `ProviderUnavailable`
+subclass so an existing provider failover chain can move to another provider.
+The wrapper does not sleep or retry in the background: callers can inspect
+`retry_after_seconds` and schedule a later attempt. When a provider reports a
+rate-limit cooldown (for example, from a Retry-After header), call
+`governor.defer(seconds)`. Quotas are configured per provider instance and
+must be set to the provider's current documented limits; they do not infer or
+guarantee an account's remaining remote API credits.
