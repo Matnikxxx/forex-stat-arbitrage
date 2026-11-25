@@ -1,11 +1,16 @@
 """Tests for provider health tracking and circuit-breaker recovery."""
 
 from datetime import datetime, timezone
+from threading import Event, Thread
 
 import pytest
 
 from src.market_data import Candle
-from src.market_feed import CandleRequest, ProviderUnavailable
+from src.market_feed import (
+    CandleRequest,
+    MarketDataError,
+    ProviderUnavailable,
+)
 from src.provider_health import CircuitBreakingProvider
 
 
@@ -87,9 +92,7 @@ def test_circuit_opens_at_failure_threshold():
 def test_open_circuit_blocks_provider_calls():
     clock = FakeClock()
     stub = StubProvider(error=OSError("offline"))
-    wrapped = CircuitBreakingProvider(
-        stub, failure_threshold=1, clock=clock
-    )
+    wrapped = CircuitBreakingProvider(stub, failure_threshold=1, clock=clock)
     with pytest.raises(ProviderUnavailable):
         wrapped.fetch_candles(REQUEST)
     calls = stub.calls
@@ -210,3 +213,98 @@ def test_circuit_stays_closed_below_failure_threshold():
         wrapped.fetch_candles(REQUEST)
     assert wrapped.state == "closed"
     assert wrapped.health().consecutive_failures == 1
+
+
+def test_market_data_errors_are_not_counted_as_provider_outages():
+    stub = StubProvider(error=MarketDataError("invalid payload"))
+    wrapped = CircuitBreakingProvider(stub, failure_threshold=1)
+    with pytest.raises(MarketDataError, match="invalid payload"):
+        wrapped.fetch_candles(REQUEST)
+    health = wrapped.health()
+    assert health.total_failures == 0
+    assert health.consecutive_failures == 0
+    assert wrapped.state == "closed"
+
+
+def test_provider_unavailable_still_counts_as_outage():
+    stub = StubProvider(error=ProviderUnavailable("offline"))
+    wrapped = CircuitBreakingProvider(stub, failure_threshold=1)
+    with pytest.raises(ProviderUnavailable):
+        wrapped.fetch_candles(REQUEST)
+    assert wrapped.health().total_failures == 1
+    assert wrapped.state == "open"
+
+
+def test_probe_is_released_when_market_data_error_occurs():
+    clock = FakeClock()
+    stub = StubProvider(error=ProviderUnavailable("offline"))
+    wrapped = CircuitBreakingProvider(
+        stub, failure_threshold=1, reset_timeout=1, clock=clock
+    )
+    with pytest.raises(ProviderUnavailable):
+        wrapped.fetch_candles(REQUEST)
+    clock.advance(1)
+    stub.error = MarketDataError("bad payload")
+    with pytest.raises(MarketDataError):
+        wrapped.fetch_candles(REQUEST)
+    assert wrapped.health().state == "half-open"
+    stub.error = None
+    stub.result = [SAMPLE]
+    assert wrapped.fetch_candles(REQUEST) == [SAMPLE]
+
+
+def test_only_one_half_open_probe_runs_at_a_time():
+    clock = FakeClock()
+    entered = Event()
+    release = Event()
+
+    class BlockingProvider(StubProvider):
+        def fetch_candles(self, request):
+            self.calls += 1
+            entered.set()
+            assert release.wait(timeout=2)
+            return [SAMPLE]
+
+    stub = BlockingProvider(error=OSError("offline"))
+    wrapped = CircuitBreakingProvider(
+        stub, failure_threshold=1, reset_timeout=1, clock=clock
+    )
+    with pytest.raises(ProviderUnavailable):
+        wrapped.fetch_candles(REQUEST)
+    clock.advance(1)
+
+    outcomes = []
+
+    def run_probe():
+        outcomes.append(wrapped.fetch_candles(REQUEST))
+
+    thread = Thread(target=run_probe)
+    thread.start()
+    assert entered.wait(timeout=2)
+    with pytest.raises(ProviderUnavailable, match="probe is already running"):
+        wrapped.fetch_candles(REQUEST)
+    release.set()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert outcomes == [[SAMPLE]]
+    assert stub.calls == 2
+
+
+def test_concurrent_health_snapshots_are_consistent():
+    wrapped = CircuitBreakingProvider(StubProvider([SAMPLE]), clock=FakeClock())
+    wrapped.fetch_candles(REQUEST)
+    snapshot = wrapped.health()
+    assert snapshot.total_successes == 1
+    assert snapshot.total_failures == 0
+    assert snapshot.consecutive_failures == 0
+
+
+def test_boolean_timeout_is_rejected():
+    with pytest.raises(ValueError, match="positive number"):
+        CircuitBreakingProvider(StubProvider([SAMPLE]), reset_timeout=True)
+
+
+def test_boolean_failure_threshold_is_rejected():
+    with pytest.raises(ValueError, match="positive integer"):
+        CircuitBreakingProvider(StubProvider([SAMPLE]), failure_threshold=True)
