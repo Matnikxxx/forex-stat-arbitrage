@@ -111,3 +111,37 @@ planning estimates: provider history limits, missing market sessions, remote
 credits, and provider-specific rules can change the actual result. Configure
 the quota from the provider's current terms; this feature does not discover
 remote account credits or bypass rate limits.
+
+
+## Quota-aware backfill execution
+
+After creating a preflight plan, use `execute_backfill_plan` to run it through
+the historical data service. The service should use a `QuotaAwareProvider`
+when local request limits need enforcement:
+
+```python
+from src.backfill_execution import execute_backfill_plan
+from src.backfill_planner import plan_backfill
+
+plan = plan_backfill(
+    pair="EUR/USD",
+    timeframe="15m",
+    start=start,
+    end=end,
+    quota=quota,
+    governor=governor,
+)
+outcome = execute_backfill_plan(service, plan)
+if outcome.deferred:
+    print("Resume after seconds:", outcome.retry_after_seconds)
+else:
+    print("Stored candles:", outcome.stored_candles)
+```
+
+The executor never busy-waits. If the quota governor blocks a request, it
+returns a deferred result with completed-request progress and the retry delay.
+Successful earlier windows remain stored and the SQLite checkpoint allows the
+same plan to resume later. Provider outages and invalid market data are not
+silently converted into quota deferrals; those errors remain visible to the
+caller. This remains a historical-data feature for research and paper trading,
+not live order execution.
