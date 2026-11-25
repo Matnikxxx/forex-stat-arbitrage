@@ -22,9 +22,7 @@ def validate_settings() -> None:
     if STARTING_CAPITAL_USD <= 0:
         raise ValueError("Starting simulated capital must be positive.")
     if not 0 < MAX_RISK_PER_TRADE <= 0.01:
-        raise ValueError(
-            "Risk per paired trade must be greater than 0 and at most 1%."
-        )
+        raise ValueError("Risk per paired trade must be greater than 0 and at most 1%.")
     if MAX_SIMULTANEOUS_POSITIONS < 1:
         raise ValueError("At least one simultaneous position must be allowed.")
     if len(CURRENCY_PAIRS) != 4 or len(set(CURRENCY_PAIRS)) != 4:
