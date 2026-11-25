@@ -248,3 +248,25 @@ validation errors remain visible. The application may inspect
 `due_retries(now)` and invoke this gate for each matching plan. This is
 caller-driven: it does not create polling, timers, background workers, or
 live trading actions.
+
+
+## Persistent backfill job definitions
+
+`BackfillJobStorage` stores the original request parameters in SQLite: currency pair, timeframe, UTC-normalized start and end times, and the maximum candles per request. This is separate from retry timing metadata, so a restart can recover both what work was requested and when it is due.
+
+```python
+from src.backfill_job_storage import BackfillJob, BackfillJobStorage
+
+jobs = BackfillJobStorage("data/market.db")
+jobs.save(BackfillJob(
+    pair="EUR/USD",
+    timeframe="15m",
+    start=start,
+    end=end,
+    max_candles=1000,
+))
+saved_job = jobs.load("EUR/USD", "15m")
+all_jobs = jobs.load_all()
+```
+
+Jobs are uniquely identified by pair and timeframe. Saving the same identity replaces its date range and candle limit; different pairs and timeframes remain isolated. Date ranges, timezone awareness, supported pair/timeframe values, and candle limits are validated before writing. The store is passive: it does not schedule work, contact providers, or execute trades. The application remains responsible for coordinating saved jobs with retry schedules.
