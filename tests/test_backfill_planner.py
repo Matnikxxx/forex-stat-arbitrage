@@ -16,7 +16,7 @@ def test_plan_splits_range_into_non_overlapping_requests():
         "EUR/USD", "15m", START, START + timedelta(minutes=45),
         QUOTA, max_candles=2,
     )
-    assert len(plan.requests) == 3
+    assert len(plan.requests) == 2
     assert plan.requests[0].end + timedelta(minutes=15) == plan.requests[1].start
 
 
