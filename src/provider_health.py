@@ -1,12 +1,18 @@
-"""Provider health tracking and a lightweight circuit breaker."""
+"""Provider health tracking and a concurrency-safe circuit breaker."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from threading import RLock
 from typing import Callable
 
 from src.market_data import Candle
-from src.market_feed import CandleRequest, MarketDataProvider, ProviderUnavailable
+from src.market_feed import (
+    CandleRequest,
+    MarketDataError,
+    MarketDataProvider,
+    ProviderUnavailable,
+)
 
 
 @dataclass(frozen=True)
@@ -26,9 +32,9 @@ class ProviderHealth:
 class CircuitBreakingProvider:
     """Temporarily stop calling an unhealthy provider after repeated failures.
 
-    The wrapper is synchronous and intentionally small. Once the cooldown
-    expires, one request is allowed as a recovery probe. A successful probe
-    closes the circuit; a failed probe opens it again.
+    Only availability failures count toward the circuit threshold. Invalid
+    market-data responses are propagated unchanged so failover cannot hide
+    data-quality defects. A lock protects state and permits one recovery probe.
     """
 
     def __init__(
@@ -59,6 +65,7 @@ class CircuitBreakingProvider:
         self.failure_threshold = failure_threshold
         self.reset_timeout = float(reset_timeout)
         self._clock = clock or time.monotonic
+        self._lock = RLock()
         self._consecutive_failures = 0
         self._total_successes = 0
         self._total_failures = 0
@@ -67,52 +74,42 @@ class CircuitBreakingProvider:
         self._last_success_at: datetime | None = None
         self._probe_in_progress = False
 
-    @property
-    def state(self) -> str:
-        """Return closed, open, or half-open based on the current clock."""
+    def _state_unlocked(self) -> str:
         if self._opened_at is None:
             return "closed"
         if self._clock() - self._opened_at < self.reset_timeout:
             return "open"
         return "half-open"
 
+    @property
+    def state(self) -> str:
+        """Return closed, open, or half-open based on the current clock."""
+        with self._lock:
+            return self._state_unlocked()
+
     def health(self) -> ProviderHealth:
-        """Return provider health without exposing exception messages."""
-        state = self.state
-        remaining = 0.0
-        if state == "open" and self._opened_at is not None:
-            remaining = max(
-                0.0, self.reset_timeout - (self._clock() - self._opened_at)
-            )
-        return ProviderHealth(
-            provider=self.name,
-            state=state,
-            consecutive_failures=self._consecutive_failures,
-            total_successes=self._total_successes,
-            total_failures=self._total_failures,
-            last_error_type=self._last_error_type,
-            last_success_at=self._last_success_at,
-            retry_after_seconds=remaining,
-        )
-
-    def fetch_candles(self, request: CandleRequest) -> Sequence[Candle]:
-        """Fetch unless open; count failures and allow a single recovery probe."""
-        state = self.state
-        was_half_open = state == "half-open"
-        if state == "open":
-            raise ProviderUnavailable(
-                f"Provider {self.name!r} circuit is open; retry later."
-            )
-        if state == "half-open":
-            if self._probe_in_progress:
-                raise ProviderUnavailable(
-                    f"Provider {self.name!r} recovery probe is already running."
+        """Return a consistent provider-health snapshot without error messages."""
+        with self._lock:
+            state = self._state_unlocked()
+            remaining = 0.0
+            if state == "open" and self._opened_at is not None:
+                remaining = max(
+                    0.0,
+                    self.reset_timeout - (self._clock() - self._opened_at),
                 )
-            self._probe_in_progress = True
+            return ProviderHealth(
+                provider=self.name,
+                state=state,
+                consecutive_failures=self._consecutive_failures,
+                total_successes=self._total_successes,
+                total_failures=self._total_failures,
+                last_error_type=self._last_error_type,
+                last_success_at=self._last_success_at,
+                retry_after_seconds=remaining,
+            )
 
-        try:
-            candles = self.provider.fetch_candles(request)
-        except Exception as error:
+    def _record_failure(self, error: Exception, was_half_open: bool) -> None:
+        with self._lock:
             self._total_failures += 1
             self._consecutive_failures += 1
             self._last_error_type = type(error).__name__
@@ -121,15 +118,48 @@ class CircuitBreakingProvider:
                 or was_half_open
             ):
                 self._opened_at = self._clock()
-            self._probe_in_progress = False
+            if was_half_open:
+                self._probe_in_progress = False
+
+    def fetch_candles(self, request: CandleRequest) -> Sequence[Candle]:
+        """Fetch unless open; count availability failures and allow one probe."""
+        with self._lock:
+            state = self._state_unlocked()
+            was_half_open = state == "half-open"
+            if state == "open":
+                raise ProviderUnavailable(
+                    f"Provider {self.name!r} circuit is open; retry later."
+                )
+            if was_half_open:
+                if self._probe_in_progress:
+                    raise ProviderUnavailable(
+                        f"Provider {self.name!r} recovery probe is already running."
+                    )
+                self._probe_in_progress = True
+
+        try:
+            candles = self.provider.fetch_candles(request)
+        except ProviderUnavailable as error:
+            self._record_failure(error, was_half_open)
+            raise ProviderUnavailable(
+                f"Provider {self.name!r} request failed."
+            ) from error
+        except MarketDataError:
+            if was_half_open:
+                with self._lock:
+                    self._probe_in_progress = False
+            raise
+        except Exception as error:
+            self._record_failure(error, was_half_open)
             raise ProviderUnavailable(
                 f"Provider {self.name!r} request failed."
             ) from error
 
-        self._total_successes += 1
-        self._consecutive_failures = 0
-        self._last_error_type = None
-        self._last_success_at = datetime.now(timezone.utc)
-        self._opened_at = None
-        self._probe_in_progress = False
+        with self._lock:
+            self._total_successes += 1
+            self._consecutive_failures = 0
+            self._last_error_type = None
+            self._last_success_at = datetime.now(timezone.utc)
+            self._opened_at = None
+            self._probe_in_progress = False
         return candles
