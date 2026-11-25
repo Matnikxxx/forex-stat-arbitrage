@@ -12,6 +12,12 @@ jobs:
       - run:
           name: Run automated tests
           command: python -m pytest -q
+      - run:
+          name: Check Python code with Flake8
+          command: python -m flake8 .
+      - run:
+          name: Check formatting with Black
+          command: python -m black --check .
 
 workflows:
   test-on-push:

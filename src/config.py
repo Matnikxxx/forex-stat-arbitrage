@@ -16,7 +16,7 @@ SUPPORTED_CURRENCIES = ("EUR", "GBP", "AUD", "USD", "JPY")
 
 
 def validate_settings() -> None:
-    """Raise ValueError if core safety or configuration settings are invalid."""
+    """Raise ValueError if core settings are invalid."""
     if TRADING_MODE != "PAPER":
         raise ValueError("This project must remain in PAPER mode.")
     if STARTING_CAPITAL_USD <= 0:
@@ -26,4 +26,6 @@ def validate_settings() -> None:
     if MAX_SIMULTANEOUS_POSITIONS < 1:
         raise ValueError("At least one simultaneous position must be allowed.")
     if len(CURRENCY_PAIRS) != 4 or len(set(CURRENCY_PAIRS)) != 4:
-        raise ValueError("The initial currency universe must contain four unique pairs.")
+        raise ValueError(
+            "The initial currency universe must contain four unique pairs."
+        )
