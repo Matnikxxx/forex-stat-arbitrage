@@ -122,9 +122,9 @@ class HistoricalDataService:
         if (
             isinstance(max_candles, bool)
             or not isinstance(max_candles, int)
-            or not 1 <= max_candles <= 5000
+            or not 2 <= max_candles <= 5000
         ):
-            raise ValueError("Maximum candles must be between 1 and 5000.")
+            raise ValueError("Maximum candles must be between 2 and 5000.")
 
         duration = timeframe_duration(timeframe)
         window = duration * (max_candles - 1)
