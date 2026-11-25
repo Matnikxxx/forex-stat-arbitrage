@@ -247,8 +247,24 @@ def test_non_numeric_candle_is_rejected(monkeypatch):
 
 
 def test_provider_can_be_used_by_historical_service_contract(monkeypatch):
-    from src.market_feed import MarketDataProvider
-
     instance, _ = provider(monkeypatch, [payload(value())])
 
-    assert isinstance(instance, MarketDataProvider)
+    assert instance.name == "twelve_data"
+    assert callable(instance.fetch_candles)
+
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"timeout": 0},
+        {"timeout": float("inf")},
+        {"max_retries": -1},
+        {"max_retries": 1.5},
+        {"retry_delay": -0.1},
+        {"retry_delay": float("nan")},
+    ],
+)
+def test_invalid_provider_settings_are_rejected(settings):
+    with pytest.raises(ValueError):
+        TwelveDataProvider("test-secret", **settings)
