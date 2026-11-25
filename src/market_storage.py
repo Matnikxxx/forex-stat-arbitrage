@@ -108,8 +108,14 @@ class CandleStorage:
             for value in values
         ):
             raise ValueError("Checkpoint times must include a timezone.")
-        if not isinstance(max_candles, int) or isinstance(max_candles, bool):
-            raise ValueError("Checkpoint candle limit must be an integer.")
+        if (
+            isinstance(max_candles, bool)
+            or not isinstance(max_candles, int)
+            or not 1 <= max_candles <= 5000
+        ):
+            raise ValueError(
+                "Checkpoint candle limit must be an integer between 1 and 5000."
+            )
         with self._connect() as connection:
             connection.execute(
                 """
